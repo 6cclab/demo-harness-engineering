@@ -1,0 +1,4 @@
+name: claude-opus-4-6
+type: claude-code
+model: opus
+timeout: 600000

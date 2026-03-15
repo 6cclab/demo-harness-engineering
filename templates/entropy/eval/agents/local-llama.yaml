@@ -1,0 +1,7 @@
+name: local-llama-70b
+type: openai-compatible
+endpoint: http://localhost:8080/v1
+model: llama-3.3-70b
+api_key: ""
+timeout: 900000
+max_tokens: 16384

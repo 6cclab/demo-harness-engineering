@@ -1,0 +1,24 @@
+{
+  "name": "{{scope}}/eval",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "grade": "tsx src/cli.ts grade",
+    "eval:run": "tsx src/cli.ts run",
+    "eval:summary": "tsx src/cli.ts summary",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+{{#if (eq entropy.storage.type "s3")}}
+    "@aws-sdk/client-s3": "^3.994.0",
+{{/if}}
+    "yaml": "^2.7.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.17.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  }
+}

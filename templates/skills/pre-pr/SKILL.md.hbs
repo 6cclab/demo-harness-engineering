@@ -1,0 +1,15 @@
+---
+name: pre-pr
+description: Run all harness checks before opening a PR.
+user_invocable: true
+---
+
+# Pre-PR Validation
+
+## Steps
+
+1. **Structural Tests:** `{{project.packageManager}} harness`
+2. **Import Boundaries:** `{{project.packageManager}} check:imports`
+3. **AGENTS.md Completeness:** `{{project.packageManager}} check:agents`
+4. **Type Check:** `{{project.packageManager}} type-check`
+5. **Lint:** `{{project.packageManager}} check`

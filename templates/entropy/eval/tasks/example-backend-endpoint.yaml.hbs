@@ -1,0 +1,60 @@
+id: example-backend-endpoint
+title: "Add a new backend endpoint"
+difficulty: easy
+category: backend-only
+prompt: |
+  Add a new REST endpoint to the {{project.name}} API.
+
+  Implementation requirements:
+  1. Create a new controller file following existing patterns.
+  2. Create a routes file and register the route.
+  3. Register the new router in the routes index.
+  4. Create a unit test file covering happy path and error cases.
+  5. Ensure all checks pass:
+     - `{{project.packageManager}} harness`
+     - `{{project.packageManager}} type-check`
+     - `{{project.packageManager}} check`
+
+rubric:
+  correctness:
+    - check: harness_passes
+      points: 10
+      description: "harness exits 0"
+    - check: type_check_passes
+      points: 10
+      description: "TypeScript type-check passes with no errors"
+    - check: unit_tests_pass
+      points: 10
+      description: "Unit tests pass"
+    - check: lint_passes
+      points: 5
+      description: "Lint check passes"
+  completeness:
+    - check: file_exists
+      points: 5
+      description: "Controller file exists"
+      path: "apps/api/src/controllers/example.controller.ts"
+    - check: file_exists
+      points: 5
+      description: "Test file exists"
+      path: "apps/api/src/controllers/example.controller.test.ts"
+    - check: grep_match
+      points: 5
+      description: "Route is registered"
+      path: "apps/api/src/routes/index.ts"
+      pattern: "example"
+  pattern_adherence:
+    - check: grep_no_match
+      points: 5
+      description: "No console.log in controller file"
+      path: "apps/api/src/controllers/example.controller.ts"
+      pattern: "console\\.log"
+  autonomy:
+    scoring: manual
+    max_points: 15
+    description: "Agent completed the task without asking clarifying questions or requesting human intervention. Full 15 pts if zero interruptions; deduct 5 per interruption."
+  efficiency:
+    scoring: manual
+    max_points: 10
+    description: "Agent used a minimal number of tool calls and did not hallucinate or retry excessively. 10 pts for clean execution; scale down for wasted steps."
+max_score: 80

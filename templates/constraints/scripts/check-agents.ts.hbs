@@ -1,0 +1,106 @@
+/**
+ * AGENTS.md completeness check CLI script.
+ * Verifies all required AGENTS.md files exist and contain required sections.
+ *
+ * Usage: npx tsx scripts/check-agents.ts
+ */
+
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const ROOT = resolve(__dirname, '..');
+
+const REQUIRED_APP_AGENTS = [
+{{#each apps}}
+  'apps/{{this.name}}',
+{{/each}}
+];
+
+const REQUIRED_SECTIONS = [
+{{#each context.requiredAppSections}}
+  '{{this}}',
+{{/each}}
+];
+
+const ROOT_AGENTS_REQUIRED_SECTIONS = [
+{{#each context.requiredRootSections}}
+  '{{this}}',
+{{/each}}
+];
+
+interface Violation {
+  path: string;
+  message: string;
+}
+
+function checkAgents(): Violation[] {
+  const violations: Violation[] = [];
+
+  // Check root AGENTS.md
+  const rootAgentsPath = join(ROOT, 'AGENTS.md');
+  if (!existsSync(rootAgentsPath)) {
+    violations.push({
+      path: 'AGENTS.md',
+      message: 'Root AGENTS.md does not exist',
+    });
+  } else {
+    const content = readFileSync(rootAgentsPath, 'utf-8');
+    for (const section of ROOT_AGENTS_REQUIRED_SECTIONS) {
+      if (!content.includes(section)) {
+        violations.push({
+          path: 'AGENTS.md',
+          message: `Missing required section: "${section}"`,
+        });
+      }
+    }
+  }
+
+  // Check app AGENTS.md files
+  for (const appPath of REQUIRED_APP_AGENTS) {
+    const agentsPath = join(ROOT, appPath, 'AGENTS.md');
+    if (!existsSync(agentsPath)) {
+      violations.push({
+        path: `${appPath}/AGENTS.md`,
+        message: 'File does not exist',
+      });
+      continue;
+    }
+    const content = readFileSync(agentsPath, 'utf-8');
+    for (const section of REQUIRED_SECTIONS) {
+      if (!content.includes(section)) {
+        violations.push({
+          path: `${appPath}/AGENTS.md`,
+          message: `Missing required section: "${section}"`,
+        });
+      }
+    }
+  }
+
+  return violations;
+}
+
+const violations = checkAgents();
+
+if (violations.length > 0) {
+  console.error(`\n❌ Found ${violations.length} AGENTS.md issue(s):\n`);
+  for (const v of violations) {
+    console.error(`  ${v.path}`);
+    console.error(`    → ${v.message}\n`);
+  }
+  console.error('REMEDIATION:');
+  console.error(
+    '  - Each app must have an AGENTS.md with sections: ' +
+      REQUIRED_SECTIONS.join(', '),
+  );
+  console.error(
+    '  - Root AGENTS.md must include: ' +
+      ROOT_AGENTS_REQUIRED_SECTIONS.join(', '),
+  );
+  console.error('  - See any existing app AGENTS.md for the expected format\n');
+  process.exit(1);
+} else {
+  console.log('✅ All AGENTS.md files present and complete.');
+}

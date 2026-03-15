@@ -1,0 +1,106 @@
+export const APPS = [
+{{#each apps}}
+  '{{this.name}}',
+{{/each}}
+] as const;
+
+export const PACKAGES = [
+{{#each packages}}
+  '{{this}}',
+{{/each}}
+  'harness',
+] as const;
+
+export const CLIENT_ONLY_PACKAGES = [
+{{#each constraints.importBoundaries.clientOnlyPackages}}
+  '{{this}}',
+{{/each}}
+] as const;
+
+export const BACKEND_APPS = [
+{{#each backendApps}}
+  '{{this.name}}',
+{{/each}}
+] as const;
+
+export const APPROVED_CROSS_APP_IMPORTS: Record<string, string[]> = {
+{{#each constraints.importBoundaries.approvedCrossAppImports}}
+  '{{@key}}': [
+{{#each this}}
+    '{{this}}',
+{{/each}}
+  ],
+{{/each}}
+};
+
+export const PACKAGE_APP_IMPORT_EXCEPTIONS: Record<string, string[]> = {
+{{#each constraints.importBoundaries.packageAppExceptions}}
+  '{{@key}}': [
+{{#each this}}
+    '{{this}}',
+{{/each}}
+  ],
+{{/each}}
+};
+
+export const APP_PACKAGE_NAMES: Record<string, string> = {
+{{#each appPackageNames}}
+  '{{@key}}': '{{this}}',
+{{/each}}
+};
+
+function matchesAppPackage(importSpecifier: string, appPackageName: string): boolean {
+  return importSpecifier === appPackageName || importSpecifier.startsWith(`${appPackageName}/`);
+}
+
+function findImportedApp(importSpecifier: string): [string, string] | undefined {
+  return Object.entries(APP_PACKAGE_NAMES).find(([, pkg]) => matchesAppPackage(importSpecifier, pkg));
+}
+
+export function isImportAllowed(
+  sourceApp: string,
+  importSpecifier: string,
+): { allowed: boolean; reason?: string } {
+  if (!APPS.includes(sourceApp as (typeof APPS)[number])) {
+    const importedAppName = findImportedApp(importSpecifier);
+    if (importedAppName) {
+      const exceptions = PACKAGE_APP_IMPORT_EXCEPTIONS[sourceApp] ?? [];
+      const isException = exceptions.some((p) => importSpecifier.startsWith(p));
+      if (!isException) {
+        return {
+          allowed: false,
+          reason: `Package "${sourceApp}" imports from app "${importedAppName[0]}" (${importSpecifier}). Packages must never import from apps.`,
+        };
+      }
+    }
+    return { allowed: true };
+  }
+
+  const importedApp = findImportedApp(importSpecifier);
+  if (!importedApp) {
+    if (BACKEND_APPS.includes(sourceApp as (typeof BACKEND_APPS)[number])) {
+      const isClientOnly = CLIENT_ONLY_PACKAGES.some((pkg) => matchesAppPackage(importSpecifier, pkg));
+      if (isClientOnly) {
+        return {
+          allowed: false,
+          reason: `Backend app "${sourceApp}" imports client-only package "${importSpecifier}".`,
+        };
+      }
+    }
+    return { allowed: true };
+  }
+
+  const [importedAppDir] = importedApp;
+  if (importedAppDir === sourceApp) return { allowed: true };
+
+  const approved = APPROVED_CROSS_APP_IMPORTS[sourceApp] ?? [];
+  const isApproved = approved.some((pattern) => importSpecifier.startsWith(pattern));
+  if (!isApproved) {
+    return {
+      allowed: false,
+      reason: `App "${sourceApp}" imports from app "${importedAppDir}" via "${importSpecifier}", which is not approved.`,
+    };
+  }
+
+  return { allowed: true };
+}

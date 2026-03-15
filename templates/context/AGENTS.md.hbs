@@ -1,0 +1,51 @@
+# {{project.name}} - AI Agent Guide
+
+## Project Overview
+
+{{project.name}} is a {{#if project.monorepo}}monorepo{{else}}project{{/if}} using {{project.packageManager}}.
+
+---
+
+## Golden Principles
+
+| ID | Principle |
+|----|-----------|
+{{#each constraints.goldenPrinciples}}
+| {{this.id}} | **{{this.rule}}** |
+{{/each}}
+
+---
+
+## Dependency Layer Model
+
+{{#if project.monorepo}}
+### Rules
+
+1. **Packages never import from apps.**
+2. **Backend apps don't import frontend-only packages.**{{#if constraints.importBoundaries.clientOnlyPackages.length}} ({{#each constraints.importBoundaries.clientOnlyPackages}}`{{this}}`{{#unless @last}}, {{/unless}}{{/each}}){{/if}}
+3. **Cross-app imports must be on the approved list.**
+
+### Approved Cross-App Imports
+
+{{#each constraints.importBoundaries.approvedCrossAppImports}}
+**{{@key}}:** {{#each this}}`{{this}}`{{#unless @last}}, {{/unless}}{{/each}}
+{{/each}}
+{{/if}}
+
+## Apps
+
+| App | Path | Type |
+|-----|------|------|
+{{#each apps}}
+| `{{this.name}}` | `{{this.path}}` | {{this.type}} |
+{{/each}}
+
+## Packages
+
+{{#each packages}}
+- `{{this}}`
+{{/each}}
+
+## Common Pitfalls
+
+<!-- Add project-specific pitfalls here -->

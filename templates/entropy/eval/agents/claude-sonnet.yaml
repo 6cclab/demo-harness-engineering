@@ -1,0 +1,4 @@
+name: claude-sonnet-4-6
+type: claude-code
+model: sonnet
+timeout: 600000

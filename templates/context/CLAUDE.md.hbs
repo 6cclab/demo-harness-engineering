@@ -1,0 +1,31 @@
+# {{project.name}} — Project Rules
+
+## Golden Principles (Non-Negotiable)
+
+{{#each constraints.goldenPrinciples}}
+{{@index}}. **{{this.rule}}**
+{{/each}}
+
+{{#if project.monorepo}}
+## Import Boundaries
+
+- **Packages never import from apps**
+- **Backend apps never import frontend-only packages**
+- **Cross-app imports** must be on the approved list
+{{/if}}
+
+## Before Opening a PR
+
+Run these checks locally:
+```bash
+{{project.packageManager}} harness
+{{project.packageManager}} check:imports
+{{project.packageManager}} check:agents
+{{project.packageManager}} type-check
+```
+
+## Conventional Commits
+
+All commits must use the format: `<type>(<optional-scope>): <description>`
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`

@@ -1,0 +1,16 @@
+---
+name: new-package
+description: Scaffold a new workspace package with required scripts.
+user_invocable: true
+---
+
+# New Workspace Package
+
+## Checklist
+
+1. Create `packages/<name>/package.json` with scope `{{scope}}`
+2. Add `"type-check": "tsc --noEmit"` to scripts
+3. Create `packages/<name>/tsconfig.json`
+4. Create `packages/<name>/src/index.ts`
+5. Run `{{project.packageManager}} install`
+6. Update root `AGENTS.md` packages table

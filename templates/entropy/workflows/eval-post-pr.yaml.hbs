@@ -1,0 +1,55 @@
+name: Post-PR Eval Grade
+on:
+  pull_request:
+    types: [closed]
+    branches: [develop]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  grade:
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'ai-generated')
+    runs-on: [{{entropy.ci.runner}}]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+{{#if (eq entropy.ci.secrets "infisical")}}
+      - uses: infisical/secrets-action@v1.0.9
+        with:
+          url: ${{ '{{' }} secrets.INFISICAL_URL {{ '}}' }}
+          method: oidc
+          project-slug: ${{ '{{' }} secrets.INFISICAL_PROJECT_SLUG {{ '}}' }}
+          env-slug: dev
+          secret-path: /deploy
+{{/if}}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Grade PR
+        env:
+{{#if (eq entropy.ci.secrets "github")}}
+          EVAL_S3_ENDPOINT: ${{ '{{' }} secrets.EVAL_S3_ENDPOINT {{ '}}' }}
+          EVAL_S3_BUCKET: ${{ '{{' }} secrets.EVAL_S3_BUCKET {{ '}}' }}
+          EVAL_S3_ACCESS_KEY: ${{ '{{' }} secrets.EVAL_S3_ACCESS_KEY {{ '}}' }}
+          EVAL_S3_SECRET_KEY: ${{ '{{' }} secrets.EVAL_S3_SECRET_KEY {{ '}}' }}
+{{else}}
+          EVAL_S3_ENDPOINT: ${{ '{{' }} env.EVAL_S3_ENDPOINT {{ '}}' }}
+          EVAL_S3_BUCKET: ${{ '{{' }} env.EVAL_S3_BUCKET {{ '}}' }}
+          EVAL_S3_ACCESS_KEY: ${{ '{{' }} env.EVAL_S3_ACCESS_KEY {{ '}}' }}
+          EVAL_S3_SECRET_KEY: ${{ '{{' }} env.EVAL_S3_SECRET_KEY {{ '}}' }}
+{{/if}}
+        run: |
+          task_flag="--all"
+          for label in $(echo '${{ '{{' }} toJSON(github.event.pull_request.labels.*.name) {{ '}}' }}' | jq -r '.[]'); do
+            if [[ "$label" == task:* ]]; then
+              task_id="${label#task:}"
+              task_flag="--task packages/eval/tasks/${task_id}.yaml"
+              break
+            fi
+          done
+          pnpm grade $task_flag --baseline ${{ '{{' }} github.event.pull_request.base.sha {{ '}}' }} \
+            --agent "${{ '{{' }} github.event.pull_request.user.login {{ '}}' }}" --upload

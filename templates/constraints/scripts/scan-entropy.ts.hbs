@@ -1,0 +1,249 @@
+/**
+ * Entropy scanner CLI script.
+ * Scans for codebase drift and reports issues.
+ *
+ * Usage: npx tsx scripts/scan-entropy.ts
+ */
+
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const ROOT = resolve(__dirname, '..');
+
+const APP_SRC_DIRS: Record<string, string> = {
+{{#each apps}}
+  '{{this.name}}': '{{this.srcDir}}',
+{{/each}}
+};
+
+const APPS = [
+{{#each apps}}
+  '{{this.name}}',
+{{/each}}
+] as const;
+
+interface Finding {
+  category: string;
+  message: string;
+}
+
+function collectSourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return files;
+  }
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry);
+    if (
+      [
+        'node_modules',
+        'dist',
+        'build',
+        'generated',
+        '.react-router',
+        'scripts',
+      ].includes(entry)
+    )
+      continue;
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      files.push(...collectSourceFiles(fullPath));
+    } else if (
+      /\.(ts|tsx)$/.test(entry) &&
+      !entry.endsWith('.d.ts') &&
+      !entry.endsWith('.test.ts') &&
+      !entry.endsWith('.spec.ts')
+    ) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function scanEntropy(): Finding[] {
+  const findings: Finding[] = [];
+
+  // 1. Check AGENTS.md references to packages/apps that don't exist
+  const rootAgentsPath = join(ROOT, 'AGENTS.md');
+  if (existsSync(rootAgentsPath)) {
+    const content = readFileSync(rootAgentsPath, 'utf-8');
+    const packageRefs = content.match(/packages\/[\w-]+/g) ?? [];
+    for (const ref of new Set(packageRefs)) {
+      const fullPath = join(ROOT, ref);
+      if (!existsSync(fullPath)) {
+        findings.push({
+          category: 'stale-reference',
+          message: `AGENTS.md references "${ref}" which does not exist`,
+        });
+      }
+    }
+    const appRefs = content.match(/apps\/[\w-]+/g) ?? [];
+    for (const ref of new Set(appRefs)) {
+      const fullPath = join(ROOT, ref);
+      if (!existsSync(fullPath)) {
+        findings.push({
+          category: 'stale-reference',
+          message: `AGENTS.md references "${ref}" which does not exist`,
+        });
+      }
+    }
+  }
+
+  // 2. Check for missing type-check scripts
+  const packagesDir = join(ROOT, 'packages');
+  if (existsSync(packagesDir)) {
+    const pkgDirs = readdirSync(packagesDir).filter((d) => {
+      const fullPath = join(packagesDir, d);
+      try {
+        return (
+          statSync(fullPath).isDirectory() &&
+          existsSync(join(fullPath, 'package.json'))
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    for (const pkg of pkgDirs) {
+      if (pkg === 'tsconfig') continue;
+      const pkgJson = JSON.parse(
+        readFileSync(join(packagesDir, pkg, 'package.json'), 'utf-8'),
+      );
+      if (!pkgJson.scripts?.['type-check']) {
+        findings.push({
+          category: 'missing-type-check',
+          message: `packages/${pkg} is missing "type-check" script`,
+        });
+      }
+    }
+  }
+
+  // 3. Check for console.log in app source files
+  for (const app of APPS) {
+    const srcDir = join(ROOT, 'apps', app, APP_SRC_DIRS[app] ?? 'src');
+    const files = collectSourceFiles(srcDir);
+    let count = 0;
+    for (const file of files) {
+      const content = readFileSync(file, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        if (
+          /\bconsole\.log\b/.test(line) &&
+          !line.trimStart().startsWith('//')
+        ) {
+          count++;
+        }
+      }
+    }
+    if (count > 0) {
+      findings.push({
+        category: 'console-log',
+        message: `apps/${app}: ${count} console.log usage(s) found — use a proper logger instead`,
+      });
+    }
+  }
+
+  // 4. Check for unused workspace packages
+  const allSourceFiles: string[] = [];
+  for (const app of APPS) {
+    const srcDir = join(ROOT, 'apps', app, APP_SRC_DIRS[app] ?? 'src');
+    allSourceFiles.push(...collectSourceFiles(srcDir));
+  }
+  if (existsSync(packagesDir)) {
+    const pkgDirs = readdirSync(packagesDir).filter((d) => {
+      const fullPath = join(packagesDir, d);
+      try {
+        return (
+          statSync(fullPath).isDirectory() &&
+          existsSync(join(fullPath, 'package.json'))
+        );
+      } catch {
+        return false;
+      }
+    });
+    for (const pkg of pkgDirs) {
+      if (['tsconfig', 'harness'].includes(pkg)) continue;
+      const pkgJson = JSON.parse(
+        readFileSync(join(packagesDir, pkg, 'package.json'), 'utf-8'),
+      );
+      const pkgName = pkgJson.name as string;
+      if (!pkgName) continue;
+
+      let isUsed = false;
+      for (const file of allSourceFiles) {
+        const content = readFileSync(file, 'utf-8');
+        if (content.includes(pkgName)) {
+          isUsed = true;
+          break;
+        }
+      }
+
+      // Also check if it's used as a dependency in any app/package
+      if (!isUsed) {
+        for (const app of APPS) {
+          const appPkgPath = join(ROOT, 'apps', app, 'package.json');
+          if (existsSync(appPkgPath)) {
+            const appPkg = JSON.parse(readFileSync(appPkgPath, 'utf-8'));
+            if (
+              appPkg.dependencies?.[pkgName] ||
+              appPkg.devDependencies?.[pkgName]
+            ) {
+              isUsed = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!isUsed) {
+        findings.push({
+          category: 'unused-package',
+          message: `${pkgName} (packages/${pkg}) appears to be unused by any app`,
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+const findings = scanEntropy();
+
+if (findings.length > 0) {
+  console.warn(`\n⚠️  Found ${findings.length} entropy finding(s):\n`);
+  const grouped: Record<string, string[]> = {};
+  for (const f of findings) {
+    if (!grouped[f.category]) grouped[f.category] = [];
+    grouped[f.category].push(f.message);
+  }
+  for (const [category, messages] of Object.entries(grouped)) {
+    console.warn(`  [${category}]`);
+    for (const msg of messages) {
+      console.warn(`    - ${msg}`);
+    }
+    console.warn('');
+  }
+} else {
+  console.log('✅ No entropy findings. Codebase is clean.');
+}
+
+// Exit with code 1 only for critical findings, not warnings
+const criticalCategories = ['stale-reference', 'missing-type-check'];
+const hasCritical = findings.some((f) =>
+  criticalCategories.includes(f.category),
+);
+if (hasCritical) {
+  process.exit(1);
+}

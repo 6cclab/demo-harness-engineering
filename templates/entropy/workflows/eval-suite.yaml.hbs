@@ -1,0 +1,79 @@
+name: Weekly Eval Suite
+on:
+  schedule:
+    - cron: '{{entropy.ci.schedule}}'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Specific task ID (blank = run all)'
+        required: false
+      agent:
+        description: 'Agent adapter name'
+        default: 'claude-sonnet'
+      no_harness:
+        description: 'Run without harness docs (A/B test)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+jobs:
+  eval:
+    runs-on: [{{entropy.ci.runner}}]
+    steps:
+      - uses: actions/checkout@v6
+{{#if (eq entropy.ci.secrets "infisical")}}
+      - uses: infisical/secrets-action@v1.0.9
+        with:
+          url: ${{ '{{' }} secrets.INFISICAL_URL {{ '}}' }}
+          method: oidc
+          project-slug: ${{ '{{' }} secrets.INFISICAL_PROJECT_SLUG {{ '}}' }}
+          env-slug: dev
+          secret-path: /deploy
+{{/if}}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run eval suite
+        env:
+{{#if (eq entropy.ci.secrets "github")}}
+          ANTHROPIC_API_KEY: ${{ '{{' }} secrets.ANTHROPIC_API_KEY {{ '}}' }}
+          EVAL_S3_ENDPOINT: ${{ '{{' }} secrets.EVAL_S3_ENDPOINT {{ '}}' }}
+          EVAL_S3_BUCKET: ${{ '{{' }} secrets.EVAL_S3_BUCKET {{ '}}' }}
+          EVAL_S3_ACCESS_KEY: ${{ '{{' }} secrets.EVAL_S3_ACCESS_KEY {{ '}}' }}
+          EVAL_S3_SECRET_KEY: ${{ '{{' }} secrets.EVAL_S3_SECRET_KEY {{ '}}' }}
+{{else}}
+          ANTHROPIC_API_KEY: ${{ '{{' }} env.ANTHROPIC_API_KEY {{ '}}' }}
+          EVAL_S3_ENDPOINT: ${{ '{{' }} env.EVAL_S3_ENDPOINT {{ '}}' }}
+          EVAL_S3_BUCKET: ${{ '{{' }} env.EVAL_S3_BUCKET {{ '}}' }}
+          EVAL_S3_ACCESS_KEY: ${{ '{{' }} env.EVAL_S3_ACCESS_KEY {{ '}}' }}
+          EVAL_S3_SECRET_KEY: ${{ '{{' }} env.EVAL_S3_SECRET_KEY {{ '}}' }}
+{{/if}}
+        run: |
+          task_flag=""
+          if [ -n "${{ '{{' }} inputs.task {{ '}}' }}" ]; then
+            task_flag="--task packages/eval/tasks/${{ '{{' }} inputs.task {{ '}}' }}.yaml"
+          else
+            task_flag="--all"
+          fi
+          harness_flag=""
+          if [ "${{ '{{' }} inputs.no_harness {{ '}}' }}" = "true" ]; then
+            harness_flag="--no-harness"
+          fi
+          pnpm eval:run $task_flag --agent packages/eval/agents/${{ '{{' }} inputs.agent {{ '}}' }}.yaml $harness_flag --upload
+      - name: Create issue on score drop
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Eval suite score drop - ${new Date().toISOString().split('T')[0]}`,
+              body: 'The weekly eval suite detected a score regression. Check the latest report in the eval storage.',
+              labels: ['eval', 'maintenance'],
+            });

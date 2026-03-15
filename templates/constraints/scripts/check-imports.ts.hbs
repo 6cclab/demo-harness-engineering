@@ -1,0 +1,231 @@
+/**
+ * Import boundary check CLI script.
+ * Scans all source files and reports import boundary violations.
+ *
+ * Usage: npx tsx scripts/check-imports.ts
+ */
+
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const ROOT = resolve(__dirname, '..');
+
+const APP_SRC_DIRS: Record<string, string> = {
+{{#each apps}}
+  '{{this.name}}': '{{this.srcDir}}',
+{{/each}}
+};
+
+const APPS = [
+{{#each apps}}
+  '{{this.name}}',
+{{/each}}
+] as const;
+
+const PACKAGES = [
+{{#each packages}}
+  '{{this}}',
+{{/each}}
+  'harness',
+] as const;
+
+const CLIENT_ONLY_PACKAGES = [
+{{#each constraints.importBoundaries.clientOnlyPackages}}
+  '{{this}}',
+{{/each}}
+] as const;
+
+const BACKEND_APPS = [
+{{#each backendApps}}
+  '{{this.name}}',
+{{/each}}
+] as const;
+
+const APP_PACKAGE_NAMES: Record<string, string> = {
+{{#each appPackageNames}}
+  '{{@key}}': '{{this}}',
+{{/each}}
+};
+
+const PACKAGE_APP_IMPORT_EXCEPTIONS: Record<string, string[]> = {
+{{#each constraints.importBoundaries.packageAppExceptions}}
+  '{{@key}}': [
+{{#each this}}
+    '{{this}}',
+{{/each}}
+  ],
+{{/each}}
+};
+
+const APPROVED_CROSS_APP_IMPORTS: Record<string, string[]> = {
+{{#each constraints.importBoundaries.approvedCrossAppImports}}
+  '{{@key}}': [
+{{#each this}}
+    '{{this}}',
+{{/each}}
+  ],
+{{/each}}
+};
+
+const SCOPE = '{{scope}}';
+
+function collectSourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return files;
+  }
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry);
+    if (
+      ['node_modules', 'dist', 'build', 'generated', '.react-router'].includes(
+        entry,
+      )
+    )
+      continue;
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      files.push(...collectSourceFiles(fullPath));
+    } else if (/\.(ts|tsx)$/.test(entry) && !entry.endsWith('.d.ts')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function extractScopedImports(filePath: string): string[] {
+  const content = readFileSync(filePath, 'utf-8');
+  const imports: string[] = [];
+  const importRegex = new RegExp(
+    `(?:import|export)\\s+(?:type\\s+)?(?:[\\s\\S]*?)\\s+from\\s+['"](${SCOPE.replace('/', '\\/')}\\/[^'"]+)['"]`,
+    'g',
+  );
+  let match: RegExpExecArray | null;
+  match = importRegex.exec(content);
+  while (match !== null) {
+    imports.push(match[1]);
+    match = importRegex.exec(content);
+  }
+  return imports;
+}
+
+interface Violation {
+  file: string;
+  message: string;
+}
+
+function matchesApp(imp: string, appPkg: string): boolean {
+  return imp === appPkg || imp.startsWith(`${appPkg}/`);
+}
+
+function findApp(imp: string): [string, string] | undefined {
+  return Object.entries(APP_PACKAGE_NAMES).find(([, p]) => matchesApp(imp, p));
+}
+
+function checkImports(): Violation[] {
+  const violations: Violation[] = [];
+
+  // Check packages don't import from apps
+  for (const pkg of PACKAGES) {
+    if (pkg === 'harness') continue;
+    const pkgDir = join(ROOT, 'packages', pkg, 'src');
+    const files = collectSourceFiles(pkgDir);
+    for (const file of files) {
+      const imports = extractScopedImports(file);
+      for (const imp of imports) {
+        const importedApp = findApp(imp);
+        if (importedApp) {
+          const exceptions = PACKAGE_APP_IMPORT_EXCEPTIONS[pkg] ?? [];
+          const isException = exceptions.some((pattern) =>
+            imp.startsWith(pattern),
+          );
+          if (!isException) {
+            violations.push({
+              file: relative(ROOT, file),
+              message: `Package "${pkg}" imports from app "${importedApp[0]}" (${imp}). Packages must never import from apps.`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Check app imports
+  for (const app of APPS) {
+    const srcDir = join(ROOT, 'apps', app, APP_SRC_DIRS[app] ?? 'src');
+    const files = collectSourceFiles(srcDir);
+
+    for (const file of files) {
+      const imports = extractScopedImports(file);
+      for (const imp of imports) {
+        // Check client-only packages in backend apps
+        if ((BACKEND_APPS as readonly string[]).includes(app)) {
+          const isClientOnly = CLIENT_ONLY_PACKAGES.some((pkg) =>
+            matchesApp(imp, pkg),
+          );
+          if (isClientOnly) {
+            violations.push({
+              file: relative(ROOT, file),
+              message: `Backend app "${app}" imports client-only package "${imp}".`,
+            });
+            continue;
+          }
+        }
+
+        // Check cross-app imports
+        const importedApp = findApp(imp);
+        if (importedApp && importedApp[0] !== app) {
+          const approved = APPROVED_CROSS_APP_IMPORTS[app] ?? [];
+          const isApproved = approved.some((pattern) =>
+            imp.startsWith(pattern),
+          );
+          if (!isApproved) {
+            violations.push({
+              file: relative(ROOT, file),
+              message: `App "${app}" has unapproved import from app "${importedApp[0]}" (${imp}). Approved: ${approved.join(', ') || '(none)'}`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return violations;
+}
+
+const violations = checkImports();
+
+if (violations.length > 0) {
+  console.error(
+    `\n❌ Found ${violations.length} import boundary violation(s):\n`,
+  );
+  for (const v of violations) {
+    console.error(`  ${v.file}`);
+    console.error(`    → ${v.message}\n`);
+  }
+  console.error('REMEDIATION:');
+  console.error('  - Packages must not import from apps');
+  console.error(
+    '  - Backend apps must not import client-only packages',
+  );
+  console.error(
+    '  - Cross-app imports must be on the approved list in packages/harness/src/import-rules.ts',
+  );
+  console.error(
+    '  - See AGENTS.md "Dependency Layer Model" for the full import graph\n',
+  );
+  process.exit(1);
+} else {
+  console.log('✅ All imports within allowed boundaries.');
+}

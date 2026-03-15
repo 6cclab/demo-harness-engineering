@@ -1,0 +1,160 @@
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { APPS } from './import-rules.js';
+
+const ROOT = resolve(import.meta.dirname, '../../..');
+
+const APP_SRC_DIRS: Record<string, string> = {
+{{#each apps}}
+  '{{this.name}}': '{{this.srcDir}}',
+{{/each}}
+};
+
+function collectAppSourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return files;
+  }
+  for (const entry of entries) {
+    const fullPath = join(dir, entry);
+    if (
+      entry === 'node_modules' ||
+      entry === 'dist' ||
+      entry === 'build' ||
+      entry === 'generated' ||
+      entry === '.react-router' ||
+      entry === 'scripts'
+    ) {
+      continue;
+    }
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      files.push(...collectAppSourceFiles(fullPath));
+    } else if (
+      /\.(ts|tsx)$/.test(entry) &&
+      !entry.endsWith('.d.ts') &&
+      !entry.endsWith('.test.ts') &&
+      !entry.endsWith('.test.tsx') &&
+      !entry.endsWith('.spec.ts') &&
+      !entry.endsWith('.spec.tsx')
+    ) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+describe('Golden Principles', () => {
+  it('no console.log in app source files', () => {
+    const violations: string[] = [];
+
+    for (const app of APPS) {
+      const srcDir = join(ROOT, 'apps', app, APP_SRC_DIRS[app] ?? 'src');
+      const files = collectAppSourceFiles(srcDir);
+
+      for (const file of files) {
+        const content = readFileSync(file, 'utf-8');
+        const lines = content.split('\n');
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (
+            /\bconsole\.log\b/.test(line) &&
+            !line.trimStart().startsWith('//')
+          ) {
+            const relPath = relative(ROOT, file);
+            violations.push(`${relPath}:${i + 1}: ${line.trim()}`);
+          }
+        }
+      }
+    }
+
+    expect(
+      violations,
+      `console.log usage found in app source files:\n${violations.join('\n')}\n\n` +
+        'REMEDIATION: Use a proper logger instead of console.log.',
+    ).toEqual([]);
+  });
+
+  it('all packages have type-check script', () => {
+    const violations: string[] = [];
+
+    const packagesDir = join(ROOT, 'packages');
+    let packageDirs: string[];
+    try {
+      packageDirs = readdirSync(packagesDir).filter((d) => {
+        const fullPath = join(packagesDir, d);
+        return (
+          statSync(fullPath).isDirectory() &&
+          existsSync(join(fullPath, 'package.json'))
+        );
+      });
+    } catch {
+      return;
+    }
+
+    for (const pkg of packageDirs) {
+      if (pkg === 'tsconfig') continue;
+
+      const pkgJsonPath = join(packagesDir, pkg, 'package.json');
+      const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+
+      if (!pkgJson.scripts?.['type-check']) {
+        violations.push(
+          `packages/${pkg}: missing "type-check" script in package.json`,
+        );
+      }
+    }
+
+    expect(
+      violations,
+      `Packages missing type-check script:\n${violations.join('\n')}\n\n` +
+        'REMEDIATION: Add "type-check": "tsc --noEmit" to the package\'s package.json scripts.',
+    ).toEqual([]);
+  });
+
+  it('all apps have AGENTS.md', () => {
+    const violations: string[] = [];
+    const requiredSections = [
+      '## Role',
+      '## Structure',
+      '## Patterns',
+      '## Forbidden',
+    ];
+
+    for (const app of APPS) {
+      const agentsMdPath = join(ROOT, 'apps', app, 'AGENTS.md');
+
+      if (!existsSync(agentsMdPath)) {
+        violations.push(`apps/${app}/AGENTS.md: file does not exist`);
+        continue;
+      }
+
+      const content = readFileSync(agentsMdPath, 'utf-8');
+      for (const section of requiredSections) {
+        if (!content.includes(section)) {
+          violations.push(
+            `apps/${app}/AGENTS.md: missing required section "${section}"`,
+          );
+        }
+      }
+    }
+
+    expect(
+      violations,
+      `AGENTS.md completeness issues:\n${violations.join('\n')}\n\n` +
+        'REMEDIATION: Each app must have an AGENTS.md with sections: ' +
+        requiredSections.join(', ') +
+        '. See any existing app AGENTS.md for the expected format.',
+    ).toEqual([]);
+  });
+});
