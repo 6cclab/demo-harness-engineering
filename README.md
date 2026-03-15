@@ -1,6 +1,6 @@
 # demo-harness-engineering
 
-**Harness engineering** is a discipline for making AI coding agents productive and safe inside real TypeScript monorepos. It has three pillars: **Context** (what the agent should know), **Constraints** (what the agent must never do), and **Entropy** (how you measure whether the agent is drifting).
+**Harness engineering** is a discipline for making AI coding agents productive and safe inside projects. It has three pillars: **Context** (what the agent should know), **Constraints** (what the agent must never do), and **Entropy** (how you measure whether the agent is drifting).
 
 This package scaffolds all three from a single `harness.config.ts` file.
 
