@@ -43,3 +43,5 @@ jobs:
       - run: pnpm test
 
       - run: pnpm exec semantic-release
+        env:
+          GITHUB_TOKEN: ${{ env.GHCR_TOKEN }}
