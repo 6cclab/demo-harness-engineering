@@ -9,7 +9,10 @@
   "exports": {
     ".": "./dist/src/config.js"
   },
-  "files": ["dist", "templates"],
+  "files": [
+    "dist",
+    "templates"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -20,7 +23,8 @@
   "dependencies": {
     "handlebars": "^4.7.8",
     "picocolors": "^1.1.1",
-    "prompts": "^2.4.2"
+    "prompts": "^2.4.2",
+    "yaml": "^2.8.2"
   },
   "devDependencies": {
     "@types/node": "^22.17.0",
