@@ -38,11 +38,11 @@ npx demo-harness-engineering generate
 
 ## Docs
 
-- [Getting started](docs/getting-started.md)
-- [Configuration reference](docs/configuration.md)
-- [Pillars deep-dive](docs/pillars.md)
-- [Writing task cards](docs/writing-task-cards.md)
-- [VoltTrack real-world example](examples/volttrack/README.md)
+- [Getting started](https://github.com/6cclab/demo-harness-engineering/blob/main/docs/getting-started.md)
+- [Configuration reference](https://github.com/6cclab/demo-harness-engineering/blob/main/docs/configuration.md)
+- [Pillars deep-dive](https://github.com/6cclab/demo-harness-engineering/blob/main/docs/pillars.md)
+- [Writing task cards](https://github.com/6cclab/demo-harness-engineering/blob/main/docs/writing-task-cards.md)
+- [VoltTrack real-world example](https://github.com/6cclab/demo-harness-engineering/blob/main/examples/volttrack/README.md)
 
 ## License
 
