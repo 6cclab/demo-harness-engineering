@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: [self-hosted, 6cclab]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: 'universal'
+          identity-id: '25ed8732-32ba-4f81-9f25-36dfa85283e4'
+          domain: 'https://infisical.6cclab.dev'
+          env-slug: 'dev'
+          secret-path: /deploy
+          project-slug: 'github-actions-wc-rx'
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - run: pnpm test
+
+      - run: pnpm exec semantic-release
