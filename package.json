@@ -9,6 +9,10 @@
   "exports": {
     ".": "./dist/src/config.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/6cclab/demo-harness-engineering.git"
+  },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"

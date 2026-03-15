@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'bin/**'
+      - 'templates/**'
+      - 'tsconfig.json'
+      - 'tsup.config.ts'
   workflow_dispatch:
 
 permissions:
